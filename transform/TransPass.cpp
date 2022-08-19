@@ -23,12 +23,18 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+
 
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include <vector>
 #include <unordered_set>
 #include <regex>
+#include <iostream>
+
+// make "KCFLAGS=-pipe -Wsomething"
 
 using namespace llvm;
 
@@ -38,12 +44,10 @@ namespace {
         int instructionsCount = 0;
         Inst0ModulePass() : ModulePass(ID) {}
         bool runOnModule(Module &M) override;
-        // std::vector<Instruction*> storeVec;
-        // std::vector<Instruction*> entryVec;
         std::vector<Instruction*> getelemVec;
         // std::vector<std::string> matches = {"%struct.kernfs_open_file"};
         // std::vector<std::string> matches = {"%struct.seq_operations"};
-        std::vector<std::string> matches = {"%struct.kernfs_open_file", "%struct.seq_operations"};
+        std::vector<std::string> matches = {"%struct.kernfs_open_file = ", "%struct.seq_operations = "};
         // std::vector<std::string> matches = {"%struct.s"};
         bool isMatched(std::string type);
     };
@@ -61,18 +65,18 @@ namespace {
 
     bool Inst0ModulePass::runOnModule(Module &M)  {
         auto& CTX = M.getContext();
-        // outs() << "instructions : " << M.getInstructionCount() << "\n";
-        // instructionsCount = M.getInstructionCount();
+        
         for (auto& F : M) {
             // 需要排除掉需要插装的函数
             if (F.getName() == "get_rand_member_offset" || F.getName() == "f_n_y_shuffle") {
-                // outs() << F.getName() << "========removed\n";
                 continue;
             } else {
                 // outs() << F.getName() << "\n";
             }
             
             for (auto& BB : F) {
+                AllocaInst *stackVar;
+                bool flag = false;
                 for (auto& Ins : BB) {
                     // 如果编译的时候带着debug info，那么没有metadata/debuginfo 的函数不能插装
                     // inlinable function call in a function with debug info must have a !dbg location
@@ -80,16 +84,79 @@ namespace {
                     //     continue;
                     // }
                     if (Ins.getOpcode() == Instruction::GetElementPtr) {
+                        // outs() << "---------------\n"; 
                         GetElementPtrInst *gi = dyn_cast<GetElementPtrInst>(&Ins);
                         std::string type_str;
 						raw_string_ostream rso(type_str);
 						gi->getSourceElementType()->print(rso);
-                        
+                        // outs() << "---------------0\n"; 
                         if (isMatched(type_str)) {
-                            // outs() << "\t" << Ins << "\n";
-                            // outs() << "\t\t" << Ins << gi->getPointerOperand() << "\n";
-                            // for (auto &x : gi->operands()) {
-                            //     outs() << "\t\t" << *x << "\n";
+                            // outs() << "---------------1\n"; 
+                            outs() << "\t\t\t" << Ins << "\n";
+                            // std::cout << "\t\t" << type_str << "\n";
+                            Type *intTy64 = Type::getInt64Ty(CTX);
+                            Type *int64Ptr = Type::getInt64PtrTy(CTX);
+                            Type *intTy32 = Type::getInt32Ty(CTX);
+                            bool isVarArg = false;
+                            // define dso_local i64 @get_rand_member_offset(i64 %0, i32 %1) #0 {
+                            // define dso_local i64 @get_rand_member_offset(i64* %0, i32 %1)
+                            // std::vector<Type*> funcParam = {intTy64, intTy32};
+                            std::vector<Type*> funcParam = {int64Ptr, intTy32};
+                            FunctionType *functionCallType = FunctionType::get(
+                                intTy64, funcParam, isVarArg 
+                            );
+                            // outs() << "---------------2\n"; 
+                            M.getOrInsertFunction("get_rand_member_offset", functionCallType);
+                            Function* get_rand_member_offset_Func = M.getFunction("get_rand_member_offset");
+                            if (get_rand_member_offset_Func == nullptr) {
+                                outs() << "do not get get_rand_member_offset\n";
+                                return false;
+                            }
+
+// outs() << "---------------3\n"; 
+                            int count_wrong_ins = 0;
+                            // for (auto &Ins : getelemVec) {
+                                IRBuilder<> builder(&Ins);
+                                if (Ins.getNumOperands() < 3) {
+                                    outs() << "\t\t\t wrong ins: " << Ins << ++count_wrong_ins << "\n";
+
+                                    continue;
+                                }
+                                // outs() << "---------------4\n"; 
+                                auto param0 = Ins.getOperand(0);
+                                auto param2 = Ins.getOperand(2);
+                                if (param0 == nullptr || param2 == nullptr) {
+                                    continue;
+                                }
+                                // outs() << "---------------5\n"; 
+                                if (flag == false) {
+                                    stackVar = builder.CreateAlloca(Type::getInt64Ty(CTX), nullptr, "rand_offset");
+                                    flag = true;
+                                }
+                                // AllocaInst *stackVar = builder.CreateAlloca(Type::getInt64Ty(CTX), nullptr, "rand_offset");
+                                // outs() << "---------------5.1\n"; 
+                                // for (int i = 0;i < 100000000;i++) {
+                                //     // maybe we need wait a second here ?
+                                // }
+                                // auto tmp1 = builder.CreatePtrToInt(param0, Type::getInt64PtrTy(CTX));
+                                auto tmp1 = builder.CreateBitOrPointerCast(param0, Type::getInt64PtrTy(CTX));
+                                
+                                // outs() << "---------------5.2\n"; 
+                                // for (int i = 0;i < 100000000;i++) {
+                                //     // maybe we need wait a second here ?
+                                // }
+                                auto rand_offset = builder.CreateCall(get_rand_member_offset_Func, {tmp1, param2});
+                                // outs() << "---------------5.3\n"; 
+
+                                Value *res = dyn_cast<Value>(rand_offset);
+                                Value *dst = dyn_cast<Value>(stackVar);
+                                // outs() << "---------------6\n"; 
+                                if (res == nullptr || dst == nullptr) {
+                                    continue;
+                                }
+                                // outs() << "\t\t" << res << ":" << dst << "\n";
+                                // builder.CreateStore(res, dst, true);
+                                // builder.CreateLoad(rand_offset, "rand_offset");
                             // }
                             getelemVec.push_back(&Ins);
                         }
@@ -98,70 +165,8 @@ namespace {
             }
         }
 
-        // 插桩
-        // if (!getelemVec.empty()) {
-        //     // get function  void print(unsigned long x) {
-        //     Type *voidty = Type::getVoidTy(CTX);
-        //     Type *intTy64 = Type::getInt64Ty(CTX);
-        //     bool isVarArg = false;
-        //     std::vector<Type*> funcParam;
-        //     funcParam.push_back(intTy64);
-        //     FunctionType *functionCallType = FunctionType::get(
-        //         voidty, funcParam, isVarArg 
-        //     );
-        //     M.getOrInsertFunction("print", functionCallType);
-        //     Function* printFunc = M.getFunction("print");
-        //     // outs() << "get function0: print at " << printFunc << "\n";
 
-        //     for (auto &Ins : getelemVec) {
-        //         auto param0 = Ins->getOperand(0);
-        //         auto param1 = Ins->getOperand(1);
-        //         auto param2 = Ins->getOperand(2);
-        //         // outs() << param0 << ":" << *param1 << ":" << *param2 << "\n";
-        //         IRBuilder<> builder(Ins);
-        //         builder.CreateCall(printFunc, {builder.CreateIntCast(param1, Type::getInt64Ty(CTX), true)});
-        //         builder.CreateCall(printFunc, {builder.CreateIntCast(param2, Type::getInt64Ty(CTX), true)});
-        //         // outs() << " ??? " << "\n";
-        //         // auto pp1 = builder.CreateIntCast(param1, Type::getInt64Ty(CTX), true);
-        //         // outs() << "debug " << *pp1 << "\n";
-        //         // builder.CreateCall(printFunc, {pp1});
-        //         // builder.CreateCall(printFunc, {builder.CreateIntCast(param1, Type::getInt64Ty(CTX))});
-        //         builder.CreateCall(printFunc, {builder.CreatePtrToInt(param0, Type::getInt64Ty(CTX))});
-
-        //     }
-        // }
-
-        if (!getelemVec.empty()) {
-            Type *intTy64 = Type::getInt64Ty(CTX);
-            Type *intTy32 = Type::getInt32Ty(CTX);
-            bool isVarArg = false;
-            // define dso_local i64 @get_rand_member_offset(i64 %0, i32 %1) #0 {
-            std::vector<Type*> funcParam = {intTy64, intTy32};
-            FunctionType *functionCallType = FunctionType::get(
-                intTy64, funcParam, isVarArg 
-            );
-            M.getOrInsertFunction("get_rand_member_offset", functionCallType);
-            Function* get_rand_member_offset_Func = M.getFunction("get_rand_member_offset");
-            if (get_rand_member_offset_Func == nullptr) {
-                outs() << "do not get get_rand_member_offset\n";
-                return false;
-            }
-
-            for (auto &Ins : getelemVec) {
-                IRBuilder<> builder(Ins);
-                auto param0 = Ins->getOperand(0);
-                auto param2 = Ins->getOperand(2);
-                AllocaInst *stackVar = builder.CreateAlloca(Type::getInt64Ty(CTX), nullptr, "rand_offset");
-                auto rand_offset = builder.CreateCall(get_rand_member_offset_Func, {builder.CreatePtrToInt(param0, Type::getInt64Ty(CTX)), param2});
-                Value *res = dyn_cast<Value>(rand_offset);
-                Value *dst = dyn_cast<Value>(stackVar);
-                // outs() << "\t\t" << res << ":" << dst << "\n";
-                builder.CreateStore(res, dst, true);
-                // builder.CreateLoad(rand_offset, "rand_offset");
-            }
-        }
-
-        outs() << "replace " << getelemVec.size() << " getelementptrs\n";
+        outs() << "replaced " << getelemVec.size() << " getelementptrs\n";
         
         
         return true;
@@ -176,4 +181,8 @@ namespace {
         /*Name=*/"Inst0ModulePass",
         /*CFGOnly=*/true,
         /*is_analysis=*/true);
+    static RegisterStandardPasses Y(
+    PassManagerBuilder::EP_ModuleOptimizerEarly,
+    [](const PassManagerBuilder &Builder,
+       legacy::PassManagerBase &PM) { PM.add(new Inst0ModulePass()); });
 }

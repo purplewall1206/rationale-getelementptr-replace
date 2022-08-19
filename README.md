@@ -22,3 +22,10 @@
 
   st->a = 2;
 ```
+
+
+```
+ 2009  make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" 
+ 2010  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" modules_install
+ 2011  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" install
+```
