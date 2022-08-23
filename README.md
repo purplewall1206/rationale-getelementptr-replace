@@ -1,5 +1,25 @@
 # rationale-getelementptr-replace
 
+
+
+LLVM transform的经验总结
+
+pass需要标明在什么阶段，`EP_ModuleOptimizerEarly`经过测试是有效的，不标记、early_as_possible和after_optimize都会出现随机崩溃事件
+
+上次只对ext4进行的点对点变形，一条一条指令修改，结果会造成整个内核地址混乱，虽然能运行，但是可能会崩溃，因此正确的做法是直接把pass加到make的`KCFLAGS`里面
+
+
+
+
+```
+ 2009  make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" 
+ 2010  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" modules_install
+ 2011  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" install
+```
+
+
+
+------------------------
 1. transformation
 2. src
 
@@ -23,9 +43,3 @@
   st->a = 2;
 ```
 
-
-```
- 2009  make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" 
- 2010  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" modules_install
- 2011  sudo make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" install
-```
