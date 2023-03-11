@@ -1,15 +1,18 @@
 # rationale-getelementptr-replace
 
+A LLVM IR transformation pass to mark and insert check on `getelementptr` instrustions.
 
+the pass has to be running on `EP_ModuleOptimizerEarly`, otherwise(no mark, `early_as_possible` and `after_optimize`) will cause a random kernel corruption.
 
-LLVM transform的经验总结
+<!--LLVM transform的经验总结
 
 pass需要标明在什么阶段，`EP_ModuleOptimizerEarly`经过测试是有效的，不标记、early_as_possible和after_optimize都会出现随机崩溃事件
 
-上次只对ext4进行的点对点变形，一条一条指令修改，结果会造成整个内核地址混乱，虽然能运行，但是可能会崩溃，因此正确的做法是直接把pass加到make的`KCFLAGS`里面
+上次只对ext4进行的点对点变形，一条一条指令修改，结果会造成整个内核地址混乱，虽然能运行，但是可能会崩溃，因此正确的做法是直接把pass加到make的`KCFLAGS`里面-->
 
 
 
+## commmands
 
 ```
  2009  make CC=clang-12 O=out-all-inst/ -j16 "KCFLAGS=-Xclang -load -Xclang /home/wangzc/Desktop/experiment/rationale-getelementptr-replace/transform/libTransPass.so" 
@@ -18,19 +21,6 @@ pass需要标明在什么阶段，`EP_ModuleOptimizerEarly`经过测试是有效
 ```
 
 
-
-------------------------
-1. transformation
-2. src
-
-
-- 实现简单的getelemetptr替换
-- llvm-ir编译kernel，llc修改kernel object最后链接
-- 研究下rcu和cred
-- 看看实验，选择哪些
-- 相关工作复现
-- ebpf脚本
-- ebpf helper function
 
 # getelementptr
 
